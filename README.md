@@ -1,244 +1,277 @@
-## Salsa as a Nonverbal Embodied Language–The CoMPAS3D Dataset and Benchmarks
+# SalsaAgent: A Multimodal Embodied Language Model for Interactive Dance Generation
 
-### Overview
-Imagine a humanoid that can safely and creatively dance with a human, adapting to its partner’s proficiency, using haptic signaling as a primary form of communication. While today’s AI systems excel at text or voice-based interaction with large language models, human communication extends far beyond words—it includes embodied movement, timing, and physical coordination. Modeling coupled interaction between two agents poses a formidable challenge: it is continuous, bidirectionally reactive, and shaped by individual variation.
+**Payam Jome Yazdian**, **Zoe Stanley**, **Angelica Lim**  
+Simon Fraser University
 
-We present **CoMPAS3D**, the largest and most diverse motion-capture dataset of improvised salsa dancing, designed as a challenging testbed for interactive, expressive humanoid AI. The dataset includes:
-- **3 hours** of leader–follower salsa dances
-- **18 dancers** spanning beginner, intermediate, and professional skill levels
-- **2,800+ move segments** annotated with move types, combinations, errors, and stylistic elements
+[Paper](https://arxiv.org/abs/2605.29219) | [Project Page](https://pjyazdian.github.io/Salsa-Agent/) | [Video](https://pjyazdian.github.io/Salsa-Agent/#video) | [Code](https://github.com/pjyazdian/Salsa-Agent) | [Gallery](https://pjyazdian.github.io/Salsa-Agent/#gallery)
 
-We draw analogies between partner dance communication and natural language, defining two benchmark tasks for synthetic 3D humans that parallel key problems in spoken dialogue: speaker/listener synthesis (leader/follower generation) and duet (conversation) generation.
+<p align="center">
+  <img src="docs/asset/framework.png" alt="SalsaAgent framework overview" width="90%">
+</p>
 
-Alongside the dataset and expert annotations, we release:
-1. A multitask **SalsaAgent** model capable of:
-   - **Leader→Follower** and **Follower→Leader** motions
-   - **Caption→Motion** generation
-2. **Baselines** and **evaluation scripts** to accelerate research in socially interactive embodied AI.
+SalsaAgent generates expressive, full-body **follower** salsa motion in reaction to an observed **leader** and background **music**. We formulate partner dance as nonverbal motion token passing: discrete motion tokens, pairwise relation tokens, and audio are fused in a fine-tuned large language model, then refined with a diffusion stage in shared interaction space. Evaluated on [CoMPAS3D](https://huggingface.co/datasets/Rosie-Lab/compas3d), SalsaAgent improves partner coordination, follower motion quality, and beat synchrony over Duolando and InterGen in both objective metrics and a human preference study.
+
+---
+
+## Overview
+
+Social salsa follows a lead–follow dynamic: the leader gives nonverbal cues and the follower responds while both stay aligned to the music. SalsaAgent targets this **leader-to-follower** generation task—given audio and observed leader motion, predict coordinated follower motion.
+
+The pipeline has three parts:
+
+1. **VQ-VAE tokenizers** — separate codebooks for canonicalized full-body motion and pairwise leader–follower relation trajectories (20-frame windows).
+2. **Multimodal LLM** — Gemma2 with an extended vocabulary for motion, relation, and audio tokens; two-stage training with LoRA and MotionScript text grounding for token alignment.
+3. **Diffusion refinement** — a conditional denoiser in shared world-frame joint space to improve partner geometry, timing, and contact detail while preserving LLM-level semantics.
+
+For qualitative results, baselines, and the full test-set gallery, see the [project page](https://pjyazdian.github.io/Salsa-Agent/).
 
 ---
 
 ## Getting Started
 
-### 1. Environment Setup
+From the repository root:
+
 ```bash
-conda create -n motionagent python=3.10
-conda activate motionagent
+conda create -n SalsaAgent python=3.10
+conda activate SalsaAgent
 pip install -r requirements.txt
-
-# Note: If you encounter missing dependencies, you may need to install them manually:
-# pip install lmdb human_body_prior roma body_visualizer
-
-# Note: body_visualizer requires a display for visualization. If running on a headless server,
-# you may need to set up X11 forwarding or use a virtual display.
-
-## Current Setup Status
-✅ Environment created and activated  
-✅ Requirements installed  
-✅ Pretrained checkpoints downloaded  
-✅ WavTokenizer dependencies installed  
-✅ human_body_prior installed  
-✅ roma installed  
-✅ body_visualizer installed locally  
-✅ Model loading successful (past import and checkpoint issues)
-✅ LMDB training data moved to correct location
-✅ Fixed Windows-specific paths and arguments for Ubuntu
-✅ WavTokenizer checkpoint downloaded (1.76GB)
-⚠️ CUDA out of memory error (model requires >10.75GB GPU memory)
-⚠️ Display/OpenGL context issues on headless server (common issue)
-
-## Download WavTokenizer Checkpoint
-The demo requires a WavTokenizer checkpoint file that is not included in the repository:
-- **Required file**: `utils/salsa_utils/libs/WavTokenizer/results/train/wavtokenizer_large_unify_600_24k.ckpt`
-- **Download command**:
-  ```bash
-  mkdir -p utils/salsa_utils/libs/WavTokenizer/results/train
-  python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='novateur/WavTokenizer-large-unify-40token', filename='wavtokenizer_large_unify_600_24k.ckpt', local_dir='utils/salsa_utils/libs/WavTokenizer/results/train')"
-  ```
-- **Source**: [Hugging Face - WavTokenizer-large-unify-40token](https://huggingface.co/novateur/WavTokenizer-large-unify-40token/tree/main)
-
-## Troubleshooting Display Issues
-If you encounter OpenGL/display errors on a headless server:
-1. Use X11 forwarding: `ssh -X username@server`
-2. Set up virtual display: `export DISPLAY=:99 && Xvfb :99 -screen 0 1024x768x24 &`
-3. Install Mesa software rendering: `sudo apt-get install mesa-utils`
-
-## GPU Memory Requirements
-The SalsaAgent model requires significant GPU memory:
-- **Minimum**: 12GB GPU memory
-- **Recommended**: 16GB+ GPU memory
-- **Current issue**: CUDA out of memory (model needs >10.75GB)
-
-### Solutions for GPU Memory Issues:
-1. **Use CPU instead**: Set `--device cpu` (slower but no memory limits)
-2. **Reduce batch size**: Modify batch size in options
-3. **Use smaller model**: Switch to a smaller LLM backbone
-4. **Gradient checkpointing**: Enable memory-efficient training
 ```
 
-### 2. Download Pretrained Checkpoints & Assets
-We provide helper scripts to fetch all required weights and models:
+Additional packages used by parts of the pipeline include `lmdb`, `human_body_prior`, `roma`, and `body_visualizer`. See [Pretrained Models & Assets](#pretrained-models--assets) for checkpoints and body models.
+
+---
+
+## Pretrained Models & Assets
+
+### Pretrained checkpoints (Google Drive)
+
+SalsaAgent and related pretrained weights are available here:
+
+**[Download checkpoints](https://drive.google.com/drive/folders/19lg8eX9N8_y_Nfz0L5i3utvEb47Kt3G1?usp=sharing)**
+
+Place downloaded files under `./checkpoints` (or your chosen path) for demo and evaluation.
+
+### Additional download scripts
+
 ```bash
-bash prepare/download_ckpt.sh      # SalsaAgent checkpoints
-bash prepare/download_vqvae.sh     # VQ-VAE model
-bash prepare/download_glove.sh     # GloVe embeddings
-bash prepare/download_extractor.sh # Evaluation extractor models
+bash prepare/download_ckpt.sh       # Motion-Agent base checkpoints
+bash prepare/download_glove.sh      # GloVe embeddings
+bash prepare/download_extractor.sh  # Evaluation extractor models
 ```
 
-### 3. Prepare Body Models & Auxiliary Data
-1. **SMPL-X**: Download from [SMPL-X Website](https://smpl-x.is.tue.mpg.de/) and place in:
-   ```
-   ./body_model/smplx
-   ```
-2. **SMPL-H AMASS**: Download the AMASS SMPL-H dataset and place in:
-   ```
-   ./utils/salsa_utils/lib/MotionScript/data/smplh_amass
-   ```
-3. **MotionScript**: We use MotionScript for data augmentation during pretraining [motionscript](https://arxiv.org/pdf/2312.12634). Ensure the `data` folder contains the SMPL-H files above.
+Motion and relation VQ-VAE tokenizers can be trained with the commands in [motion_representation/README.md](motion_representation/README.md), or use checkpoints from the download scripts when available.
 
-### 4. Install WaveTokenizer
-We use a WaveTokenizer for audio tokenization at 40 tokens/sec:
-1. The WavTokenizer is already included in the repository under `utils/salsa_utils/libs/WavTokenizer/`
-2. Install its dependencies:
-   ```bash
-   cd utils/salsa_utils/libs/WavTokenizer
-   pip install -r requirements.txt
-   ```
-3. Add to Python path (e.g., in `~/.bashrc`):
-   ```bash
-   export PYTHONPATH="$PYTHONPATH:$(pwd)/utils/salsa_utils/libs/WavTokenizer"
-   ```
+### WavTokenizer (audio tokens)
+
+The demo uses WavTokenizer for audio at 40 tokens/sec. Download the checkpoint:
+
+```bash
+mkdir -p utils/salsa_utils/libs/WavTokenizer/results/train
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='novateur/WavTokenizer-large-unify-40token', filename='wavtokenizer_large_unify_600_24k.ckpt', local_dir='utils/salsa_utils/libs/WavTokenizer/results/train')"
+```
+
+Install WavTokenizer dependencies and add to `PYTHONPATH`:
+
+```bash
+cd utils/salsa_utils/libs/WavTokenizer && pip install -r requirements.txt
+export PYTHONPATH="$PYTHONPATH:$(pwd)/utils/salsa_utils/libs/WavTokenizer"
+```
+
+Source: [Hugging Face — WavTokenizer-large-unify-40token](https://huggingface.co/novateur/WavTokenizer-large-unify-40token/tree/main)
+
+### Body models & MotionScript
+
+1. **SMPL-X** — download from the [SMPL-X website](https://smpl-x.is.tue.mpg.de/) and place under `./body_model/smplx`.
+2. **SMPL-H (AMASS)** — place under `./utils/salsa_utils/libs/MotionScript/data/smplh_amass` for [MotionScript](https://arxiv.org/pdf/2312.12634) text grounding during pretraining.
 
 ---
 
 ## Data Preparation
 
-### 1. Download Raw Dataset
-Download the CoMPAS3D raw data, which includes:
-- **SMPL-X extreme body models**
-- **`synced_animation/`** folder with paired motion and audio (pre-synchronized)
+SalsaAgent is trained and evaluated on [CoMPAS3D](https://huggingface.co/datasets/Rosie-Lab/compas3d) (72 improvised salsa duet recordings from 9 pairs across three proficiency levels, with synchronized music and frame-level move annotations). Raw data can be obtained from the dataset release; **this repository provides the preprocessing pipelines** that transform those recordings into synchronized, labeled LMDB training data for music-driven two-person salsa dance generation. The pipeline supports both the HumanML3D 263-dimensional motion representation and the InterHuman 262-dimensional motion representation with relationship features for interactive motions.
 
-Place under:
-```bash
---salsa_data_root /path/to/CoMPAS3D
-``` 
+### Option A: Download processed LMDB
 
-### 2. Generate LMDB
-Run the script directly to process the raw dataset and create LMDB files:
+Preprocessed CoMPAS3D LMDB files (`lmdb_train`, `lmdb_test`) are available on Google Drive:
 
-**Important: HumanML3D Example File Required**
-To be consistent with common motion datasets such as HumanML3D, the preprocessing pipeline:
-1. Rotates keypoints **-90 degrees around X-axis** to align with HumanML3D coordinate system
-2. Uses an example file from HumanML3D to compute target skeleton offsets (`tgt_offsets`) during preprocessing for producing HumanML3D representation
+**[Download processed LMDB](https://drive.google.com/drive/folders/1J5GCxg-b3W58g6TipvlHx7emc0AQSLRC?usp=drive_link)**
 
-Before processing, you need to place an example file from HumanML3D processed `new_joints` folder:
-- **Source**: Get `000021.npy` from HumanML3D processed `new_joints` folder
-- **Destination**: Place it at `body_model/HML3D_Example_joonts/000021.npy`
-- **Purpose**: This file is used to compute target skeleton offsets (`tgt_offsets`) for proper motion processing. Without it, the processing may produce NaN values in HML3D vectors.
+Extract and place under `./dataset_processed_New/lmdb_Salsa_pair/` so you have:
+
+```
+dataset_processed_New/lmdb_Salsa_pair/lmdb_train
+dataset_processed_New/lmdb_Salsa_pair/lmdb_test
+```
+
+The LMDB contains data required for both HumanML3D and InterHuman representations; the active format is selected at training time via `--motion-repr-type`.
+
+### Option B: Process from raw CoMPAS3D
+
+1. Download raw CoMPAS3D (SMPL-X fits and `synced_animation/` with paired motion and audio).
+
+2. Place an example HumanML3D joint file for skeleton offset computation:
+   - Source: `000021.npy` from HumanML3D processed `new_joints`
+   - Destination: `body_model/HML3D_Example_joonts/000021.npy`
+
+3. Run preprocessing:
 
 ```bash
 python utils/salsa_utils/salsa_utils.py \
-    --salsa_data_root /local-scratch/localhome/pjomeyaz/Payam_Files/Projects/Salsa_Dance/Dataset/compas3d \
+    --salsa_data_root /path/to/CoMPAS3D \
     --save_path ./dataset_processed_New
 ```
 
-This will create the LMDB files in `./dataset_processed_New/lmdb_Salsa_pair/lmdb_train` and `lmdb_test`.
+This creates `./dataset_processed_New/lmdb_Salsa_pair/lmdb_train` and `lmdb_test`.
 
-### 3. Create Cache
-After generating the LMDB, create a cached version for faster data loading:
+4. Optional cache for faster loading:
+
 ```bash
 python demo.py --create_cache_only --split train
-```
-This will create a cache at `./dataset_processed_New/lmdb_Salsa_pair/lmdb_train_cache_MDM`.
-
-### 4. Run Visualization App
-To visualize the dataset samples interactively:
-```bash
-python visualization/visualization_app.py
-```
-The app will launch on `http://0.0.0.0:7861` and allows you to:
-- Browse samples from the LMDB
-- Visualize leader and follower skeletons
-- View combined animations
-- Generate VQVAE reconstructions
-- Visualize audio tokenization
-- Experiment with relative motions
-
-You may also use our provided processed data.
-### 5. Create Training Samples
-`Salsa_dataloader.py` reads the LMDB and yields minibatches:
-```bash
-python -c "from Salsa_dataloader import SalsaDataset; ds = SalsaDataset(lmdb_path='./data/salsa.lmdb')"
 ```
 
 ---
 
-## Training
+## Training SalsaAgent
 
-We use the same two-stage strategy as [Motion-Agent](https://github.com/szqwu/Motion-Agent): **Stage 1** trains on broad/multi-task data to learn a good motion–text representation; **Stage 2** fine-tunes on a single task (e.g. leader→follower or caption→motion) from the stage-1 checkpoint. See [LLM_PIPELINE_COMPARISON.md](LLM_PIPELINE_COMPARISON.md) for alignment with the base code and hyperparameter notes.
+Training follows a two-stage strategy similar to [Motion-Agent](https://github.com/szqwu/Motion-Agent): **Stage 1** learns multimodal motion–language alignment; **Stage 2** fine-tunes on leader-to-follower generation.
 
-### Training MotionLLM
+**Script:** `train_motionllm_salsa.py`
 
-**Script**: `train_motionllm_salsa.py`
+### Stage 1 — multimodal pretraining
 
-**Stage 1 (multi-task / representation)**  
-Use HumanML3D-style data and Motion-Agent–like hyperparameters (e.g. `--lr 1e-5`, `--epochs 500`, `--train-batch-size 4`):
+InterHuman representation (recommended for the Salsa pipeline):
 
-| Setting | Command |
-|--------|--------|
-| **HumanML3D, no audio** | `python train_motionllm_salsa.py --task none --lr 1e-5 --epochs 500 --train-batch-size 4 --save-dir output_trained/stage1_humanml3d` |
-| **HumanML3D, with audio** | `python train_motionllm_salsa.py --task none --include-audio --lr 1e-5 --epochs 500 --train-batch-size 4 --save-dir output_trained/stage1_humanml3d_audio` |
-| **InterHuman, no audio** | `python train_motionllm_salsa.py --motion-repr-type interhuman --task none --lr 1e-5 --epochs 500 --train-batch-size 4 --save-dir output_trained/stage1_interhuman` |
-| **InterHuman, with audio** | `python train_motionllm_salsa.py --motion-repr-type interhuman --include-audio --task none --lr 1e-5 --epochs 500 --train-batch-size 4 --save-dir output_trained/stage1_interhuman_audio` |
-| **InterHuman, MDM cache (no MotionScript) + wandb** | `python train_motionllm_salsa.py --motion-repr-type interhuman --task none --lr 1e-5 --epochs 500 --train-batch-size 4 --save-every 5 --save-dir output_trained/stage1_interhuman_mdm --use-wandb --wandb-project Salsa-LLM --wandb-run-name stage1_interhuman_mdm` |
-| **InterHuman, non-MDM cache (with MotionScript) + wandb** | `python train_motionllm_salsa.py --motion-repr-type interhuman --no-MDM --task none --lr 1e-5 --epochs 500 --train-batch-size 4 --save-every 5 --save-dir output_trained/stage1_interhuman_motionscript --use-wandb --wandb-project Salsa-LLM --wandb-run-name stage1_interhuman_motionscript` |
-| **InterHuman + wandb** | `python train_motionllm_salsa.py --motion-repr-type interhuman --task none --lr 1e-5 --epochs 500 --train-batch-size 4 --save-every 5 --save-dir output_trained/stage1_interhuman --use-wandb --wandb-project Salsa-LLM --wandb-run-name stage1_interhuman` |
+```bash
+python train_motionllm_salsa.py \
+    --motion-repr-type interhuman \
+    --include-audio \
+    --task none \
+    --lr 1e-5 \
+    --epochs 500 \
+    --train-batch-size 4 \
+    --save-dir output_trained/stage1_interhuman_audio
+```
 
-**Stage 2 (task-specific)**  
-Resume from a stage-1 (or pretrained) checkpoint and fine-tune on a single task (e.g. `leader_rel_to_follower`). Use a checkpoint that matches the modality you want (no MotionScript = MDM; with MotionScript = non-MDM).
+Key Stage 1 options (see `python train_motionllm_salsa.py --help` for the full list):
 
-| Setting | Command |
-|--------|--------|
-| **Leader + Rel→Follower from Stage 1 (no MotionScript)** | `python train_motionllm_salsa.py --motion-repr-type interhuman --task leader_rel_to_follower --resume-ckpt output_trained/stage1_interhuman_mdm/Xmotionllm_epoch500.pth --lr 1e-5 --epochs 50 --save-every 10 --save-dir output_trained/leader_rel_to_follower_mdm --use-wandb --wandb-project Salsa-LLM --wandb-run-name leader_rel_to_follower_mdm` |
-| **Leader + Rel→Follower from Stage 1 (with MotionScript)** | `python train_motionllm_salsa.py --motion-repr-type interhuman --no-MDM --task leader_rel_to_follower --resume-ckpt output_trained/stage1_interhuman_motionscript/Xmotionllm_epoch500.pth --lr 1e-5 --epochs 50 --save-every 10 --save-dir output_trained/leader_rel_to_follower_motionscript --use-wandb --wandb-project Salsa-LLM --wandb-run-name leader_rel_to_follower_motionscript` |
+- **`--motion-repr-type`** — `humanml3d` (263-dim HumanML3D vectors) or `interhuman` (262-dim InterHuman representation with relationship features; recommended for SalsaAgent).
+- **`--include-audio`** — add audio tokens to the LLM vocabulary and train with music conditioning.
+- **`--no-MDM`** — use the MotionScript-augmented cache instead of the default MDM cache (enables MotionScript text captions during pretraining).
+- **`--use-wandb`** — log to Weights & Biases; pair with `--wandb-project` and `--wandb-run-name` (defaults: `Salsa-Agent`, run name derived from task).
+
+Example with wandb:
+
+```bash
+python train_motionllm_salsa.py \
+    --motion-repr-type interhuman \
+    --include-audio \
+    --task none \
+    --lr 1e-5 \
+    --epochs 500 \
+    --train-batch-size 4 \
+    --save-every 5 \
+    --save-dir output_trained/stage1_interhuman_audio \
+    --use-wandb \
+    --wandb-project Salsa-Agent \
+    --wandb-run-name stage1_interhuman_audio
+```
+
+Example with MotionScript cache (non-MDM):
+
+```bash
+python train_motionllm_salsa.py \
+    --motion-repr-type interhuman \
+    --include-audio \
+    --no-MDM \
+    --task none \
+    --lr 1e-5 \
+    --epochs 500 \
+    --train-batch-size 4 \
+    --save-every 5 \
+    --save-dir output_trained/stage1_interhuman_motionscript \
+    --use-wandb \
+    --wandb-project Salsa-Agent \
+    --wandb-run-name stage1_interhuman_motionscript
+```
+
+### Stage 2 — leader-to-follower fine-tuning
+
+Resume from a Stage 1 checkpoint:
+
+```bash
+python train_motionllm_salsa.py \
+    --motion-repr-type interhuman \
+    --include-audio \
+    --task leader_rel_to_follower \
+    --resume-ckpt output_trained/stage1_interhuman_audio/Xmotionllm_epoch500.pth \
+    --lr 1e-5 \
+    --epochs 50 \
+    --save-every 10 \
+    --save-dir output_trained/leader_rel_to_follower
+```
+
+Train motion and relation VQ-VAE tokenizers separately before LLM training — see [motion_representation/README.md](motion_representation/README.md).
 
 ---
 
 ## Demo & Inference
 
-Before running the demo, ensure your pretrained models (e.g. checkpoint files, VQ-VAE, GloVe, evaluator, and our fine-tuned for different tasks) are placed in a folder (e.g. `./checkpoints`) and point to it via `--model_ckpt`.
-
-Run the interactive demo to load a model and perform inference for one of the multitask SalsaAgent capabilities.
+Place downloaded checkpoints under `./checkpoints` (or your chosen path) and run:
 
 ```bash
-python demo.py   --model_ckpt ./checkpoints/finetune/leader_to_follower.pt   --task follower_to_leader
+python demo.py \
+    --model_ckpt ./checkpoints/finetune/leader_to_follower.pt \
+    --task leader_to_follower
 ```
 
-If you omit `--task`, the script will prompt you to choose:
+The primary evaluated task is **leader-to-follower** generation: given leader motion and music, the model predicts follower motion. Omit `--task` to choose interactively.
 
-Supported tasks:
+---
 
-- `baseline`
-- `follower_to_leader`
-- `leader_to_follower`
-- `caption_to_motion`
+## Motion Tokenizers
 
-Example without manual prompt:
+VQ-VAE tokenizers for full-body InterHuman motion and pairwise relationship features live in `motion_representation/`. Training, evaluation, and checkpoint naming are documented in:
 
-```bash
-python demo.py --model_ckpt ./checkpoints/finetune/caption_to_motion.pt                --task caption_to_motion
+**[motion_representation/README.md](motion_representation/README.md)**
+
+Recommended checkpoints:
+- HumanML3D: `motion_representation/checkpoints_VQVAE_GRU/`
+- InterHuman motion: `motion_representation/checkpoints_VQVAE_GRU_InterHuman/`
+- Relationship: `motion_representation/checkpoints_VQVAE_GRU_Relationship/`
+
+---
+
+## Visualization
+
+- **Dataset browser:** `python visualization/visualization_app.py` (default: `http://0.0.0.0:7861`)
+- **Salsa-Agent interface:** `python visualization/visualization_app_interhuman.py` — InterHuman motions, relationship features, tokens, reconstructions, and the SalsaAgent motion language model interface (LLM inference tab; default: `http://0.0.0.0:7862`)
+- **Tokenizer / reconstruction app:** [motion_representation/visualization/README.md](motion_representation/visualization/README.md)
+- **Batch comparison videos:** `python -m motion_representation.visualize_comparison` (see motion representation README)
+- **Project webpage:** [docs/](docs/) — deploy via GitHub Pages for the full [project page](https://pjyazdian.github.io/Salsa-Agent/)
+
+---
+
+## Citation
+
+If you use SalsaAgent or this benchmark, please cite:
+
+```bibtex
+@article{yazdian2026salsaagent,
+  title={SalsaAgent: A multimodal embodied language model for interactive dance generation},
+  author={Jome Yazdian, Payam and Stanley, Zoe and Lim, Angelica},
+  year={2026},
+  note={Under review}
+}
 ```
 
 ---
 
-## Citation & Acknowledgements
-Please cite our work as:
-> **Salsa as a Nonverbal Embodied Language–The CoMPAS3D Dataset and Benchmarks**
+## Acknowledgements
 
 We thank the authors of:
+
 - [T2M-GPT](https://github.com/Mael-zys/T2M-GPT)
-- [NExT-GPT](https://github.com/NExT-GPT/NExT-GPT)
-- [Motion-Agent](https://github.com/modelscope/motionagent)
-- [text-to-motion](https://github.com/EricGuo5513/text-to-motion)
-
-
+- [Motion-Agent](https://github.com/szqwu/Motion-Agent)
+- [MotionGPT / text-to-motion](https://github.com/EricGuo5513/text-to-motion)
+- [Duolando](https://github.com/lisiyao21/Duolando) and [InterGen](https://github.com/tr3e/InterGen) (baselines)
+- [in2IN](https://github.com/pabloruizponce/in2IN) (InterHuman visualization utilities)
