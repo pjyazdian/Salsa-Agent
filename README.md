@@ -3,7 +3,7 @@
 **Payam Jome Yazdian**, **Zoe Stanley**, **Angelica Lim**  
 Simon Fraser University
 
-[Paper](https://arxiv.org/abs/2605.29219) | [Project Page](https://pjyazdian.github.io/Salsa-Agent/) | [Video](https://pjyazdian.github.io/Salsa-Agent/#video) | [Code](https://github.com/pjyazdian/Salsa-Agent) | [Gallery](https://pjyazdian.github.io/Salsa-Agent/#gallery)
+[Paper](https://arxiv.org/abs/2605.29219) | [Project Page](https://pjyazdian.github.io/Salsa-Agent/) | [Video](https://pjyazdian.github.io/Salsa-Agent/#video) | [Gallery](https://pjyazdian.github.io/Salsa-Agent/#gallery)
 
 <p align="center">
   <img src="docs/asset/framework.png" alt="SalsaAgent framework overview" width="90%">
@@ -243,8 +243,8 @@ Recommended checkpoints:
 
 ## Visualization
 
-- **Dataset browser:** `python visualization/visualization_app.py` (default: `http://0.0.0.0:7861`)
-- **Salsa-Agent interface:** `python visualization/visualization_app_interhuman.py` — InterHuman motions, relationship features, tokens, reconstructions, and the SalsaAgent motion language model interface (LLM inference tab; default: `http://0.0.0.0:7862`)
+- **Dataset browser:** `python visualization/visualization_app.py` (web interface)
+- **Salsa-Agent interface:** `python visualization/visualization_app_interhuman.py` — InterHuman motions, relationship features, tokens, reconstructions, and the SalsaAgent motion language model interface (LLM inference tab; web interface)
 - **Tokenizer / reconstruction app:** [motion_representation/visualization/README.md](motion_representation/visualization/README.md)
 - **Batch comparison videos:** `python -m motion_representation.visualize_comparison` (see motion representation README)
 - **Project webpage:** [docs/](docs/) — deploy via GitHub Pages for the full [project page](https://pjyazdian.github.io/Salsa-Agent/)
