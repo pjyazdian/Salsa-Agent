@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>SalsaAgent</title>
+  <meta name="description" content="Project page for SalsaAgent: interactive salsa dance generation.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
+  <meta charset="utf-8">
+
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <link href="style.css" rel="stylesheet">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+</head>
+<body>
+
+<div class="container" style="text-align:center; padding:2rem 15px">
+  <div class="row" style="text-align:center">
+    <h1>SalsaAgent: A Multimodal Embodied Language Model for Interactive Dance Generation</h1>
+  </div>
+  <div class="row" style="text-align:center">
+    <div class="col-xs-0 col-md-2"></div>
+    <div class="col-xs-12 col-md-8">
+      <h4>
+        Payam <nobr>Jome Yazdian</nobr> &emsp;
+        <nobr>Zoe Stanley</nobr> &emsp;
+        <nobr>Angelica Lim</nobr>
+      </h4>
+      <h5>
+        School of Computing Science, Simon Fraser University, Burnaby, BC, Canada
+      </h5>
+    </div>
+    <div class="col-xs-0 col-md-2"></div>
+  </div>
+</div>
+
+<div class="container" style="text-align:center; padding:1rem">
+  <div class="row" style="display:flex; text-align:left; align-items:center;">
+    <div class="col-xs-12 col-md-6">
+      <h4><u>Leader-to-Follower Generation</u></h4>
+      <p>
+        SalsaAgent generates expressive follower motion in reaction to an observed leader and background music.
+        We formulate partner dance as nonverbal motion token passing: discrete motion tokens, pairwise relation tokens,
+        and audio are fused in a fine-tuned large language model, then refined with an interaction-space diffusion stage.
+      </p>
+      <p>
+        Evaluated on the <a href="https://huggingface.co/datasets/Rosie-Lab/compas3d"><strong>CoMPAS3D</strong></a> salsa duet dataset, SalsaAgent improves partner coordination,
+        follower motion quality, and beat synchrony over strong baselines (Duolando and InterGen) in both objective
+        metrics and a human preference study.
+      </p>
+    </div>
+    <div class="col-xs-12 col-md-6 teaser-wrap">
+      <img src="asset/teaser.png" alt="SalsaAgent teaser: leader and follower avatars dancing" class="teaser-img text-center">
+    </div>
+  </div>
+
+  <h3 style="text-align:center; padding-top:1rem">
+    <a class="label label-info" href="https://arxiv.org/abs/2605.29219">Paper</a>
+    <a class="label label-info" href="https://github.com/pjyazdian/Salsa-Agent">Code</a>
+    <a class="label label-info" href="#video">Video</a>
+    <a class="label label-info" href="#examples">Examples</a>
+    <a class="label label-info" href="#gallery">Gallery</a>
+  </h3>
+</div>
+
+<div class="container">
+  <h2>Abstract</h2>
+  <hr/>
+  <p>
+    Interaction between humanoids involves bidirectional and nonverbal reactivity, coordination, and synchrony.
+    Toward socially aware robots and interactive virtual agents, we present <strong>SalsaAgent</strong>, a language model
+    that generates expressive, full-body salsa dance motions in reaction to a human leader and against a contextual music backdrop.
+    We formulate interaction as nonverbal motion token passing, extending the vocabulary of a large language model (LLM)
+    to process discrete motion tokens, pairwise relation tokens, and audio. Our contributions include new tokens for
+    full-body and motion relations, LLM fine-tuning using automatically derived text descriptions of skeleton dynamics
+    for token grounding, and a two-stage token-to-diffusion pipeline. Subjective and objective evaluations demonstrate
+    the effectiveness of our approach in terms of motion quality, music and partner coordination, and consistent
+    two-person spatial behavior, with significant improvements over baselines.
+  </p>
+
+  <h2 id="video">Video</h2>
+  <hr/>
+  <div style="text-align:center;">
+    <video class="demo-video" controls playsinline preload="metadata">
+      <source src="asset/Salsa_Agent_Demo.mp4" type="video/mp4">
+      Your browser does not support HTML5 video.
+    </video>
+  </div>
+
+  <h2>Approach</h2>
+  <hr/>
+  <img src="asset/framework.png" alt="SalsaAgent framework overview" class="framework-img text-center">
+  <p>
+    SalsaAgent targets <em>leader-to-follower</em> salsa generation: given audio and observed leader motion,
+    the model predicts follower motion. The pipeline has three parts: (1) VQ-VAE tokenizers for full-body motion
+    and pairwise leader–follower relation trajectories; (2) a multimodal LLM (Gemma2) with an extended vocabulary
+    for motion, relation, and audio tokens, trained in two stages with LoRA and MotionScript text grounding;
+    and (3) a diffusion-based refinement stage in shared world-frame joint space to improve partner geometry,
+    timing, and contact detail while preserving LLM-level semantics.
+  </p>
+
+  <h2>Results</h2>
+  <hr/>
+  <p>
+    On <a href="https://huggingface.co/datasets/Rosie-Lab/compas3d">CoMPAS3D</a>, SalsaAgent achieves the lowest interaction FID among generative methods, stronger leader–follower
+    beat alignment (BED), and substantially better follower kinematic FID than Duolando and InterGen. In a blind human study
+    (31 participants, salsa experience), SalsaAgent was preferred over both baselines across timing, musicality, technique,
+    partner coordination, and originality. For quantitative metrics, ablations, and full human-study analysis, please refer to our
+    <a href="https://arxiv.org/abs/2605.29219">paper</a>.
+  </p>
+
+  <h2 id="examples">Qualitative Examples</h2>
+  <hr/>
+  <p>
+    Each example shows follower generation given the <strong>same leader motion and music</strong> on <a href="https://huggingface.co/datasets/Rosie-Lab/compas3d">CoMPAS3D</a> test clips.
+    Clips are grouped by dancer proficiency: <span class="level-badge level-beginner">Beginner</span>,
+    <span class="level-badge level-intermediate">Intermediate</span>, or
+    <span class="level-badge level-professional">Professional</span>.
+    Compare <strong>Ground Truth</strong>, our full <strong>SalsaAgent</strong> model (with diffusion refinement),
+    and baselines <strong>Duolando</strong> and <strong>InterGen</strong>.
+  </p>
+
+  <section id="examples-section">
+    <div class="gallery" id="gallery"></div>
+    <div class="gallery-nav">
+      <button type="button" class="nav-btn" onclick="prevSlide()" aria-label="Previous example">&lsaquo;</button>
+      <div id="navigation"></div>
+      <button type="button" class="nav-btn" onclick="nextSlide()" aria-label="Next example">&rsaquo;</button>
+    </div>
+  </section>
+
+  <h2 id="gallery">Gallery</h2>
+  <hr/>
+  <p>
+    The <strong>gallery</strong> contains rendered videos for the full <a href="https://huggingface.co/datasets/Rosie-Lab/compas3d">CoMPAS3D</a> test set:
+    <strong>ground truth</strong>, <strong>SalsaAgent (ours)</strong>, and baselines <strong>Duolando</strong> and <strong>InterGen</strong>.
+    Clips are exported as 100-frame windows with a 50-frame stride (512 samples in total). The Drive is organized into separate folders per method.
+  </p>
+  <p>
+    <strong>Rendered videos</strong> include synchronized audio. The observed <span style="color:#1565C0; font-weight:600;">leader</span> is shown in
+    <span style="color:#1565C0; font-weight:600;">blue</span>; the reference or model-generated
+    <span style="color:#C62828; font-weight:600;">follower</span> is shown in
+    <span style="color:#C62828; font-weight:600;">red</span> (synthesized for Duolando, InterGen, and SalsaAgent).
+  </p>
+  <p>
+    <strong>Metadata</strong> for each clip includes the source take identifier, pair proficiency level (beginner, intermediate, or professional),
+    and the start and end frame indices of the clip within the original recording.
+  </p>
+  <p>
+    <strong>3D joint trajectories</strong> are also provided as <code>.npz</code> files, containing per-frame 3D joint positions for both dancers,
+    for quantitative analysis or custom visualization.
+  </p>
+  <div class="gallery-drive-cta">
+    <p class="gallery-drive-desc">
+      Browse the complete test-set gallery (all methods, videos, metadata, and joint files) on Google Drive.
+    </p>
+    <a href="https://drive.google.com/drive/folders/1rfKVzoBIjJ9azrleBlXsSbLXT9Xemnd3?usp=drive_link"
+       class="gallery-drive-icon"
+       target="_blank"
+       rel="noopener noreferrer"
+       aria-label="Open full test-set gallery on Google Drive"
+       title="Open on Google Drive">
+      <img src="https://www.gstatic.com/images/branding/product/2x/drive_2020q4_48dp.png" width="64" height="64" alt="" class="gallery-drive-logo">
+      <span class="gallery-drive-icon-label">Google Drive</span>
+    </a>
+  </div>
+</div>
+
+<div class="container" style="padding-top:3rem; padding-bottom:3rem">
+  <h2>Citation</h2>
+  <hr/>
+  <p>If you use SalsaAgent or this benchmark, please cite:</p>
+  <pre>
+@article{yazdian2026salsaagent,
+  title={SalsaAgent: A multimodal embodied language model for interactive dance generation},
+  author={Jome Yazdian, Payam and Stanley, Zoe and Lim, Angelica},
+  year={2026},
+  note={Under review}
+}
+  </pre>
+
+  <p style="text-align:center">
+    This webpage was adapted from the
+    <a href="https://github.com/monniert/project-webpage">project-webpage</a> template
+    and the <a href="https://pjyazdian.github.io/MotionScript/">MotionScript</a> project page.
+  </p>
+</div>
+
+<script>
+  const METHODS = [
+    { key: 'ground_truth', label: 'Ground Truth' },
+    { key: 'salsa_agent', label: 'SalsaAgent (ours)', cssClass: 'method-salsa' },
+    { key: 'duolando', label: 'Duolando' },
+    { key: 'intergen', label: 'InterGen' }
+  ];
+
+  let currentSlide = 0;
+  let examples = [];
+
+  function levelClass(level) {
+    return 'level-' + level.toLowerCase();
+  }
+
+  function buildSlide(example) {
+    const slide = document.createElement('div');
+    slide.className = 'slide';
+
+    const meta = document.createElement('div');
+    meta.className = 'example-meta';
+    meta.innerHTML =
+      '<span class="level-badge ' + levelClass(example.level) + '">' + example.level + '</span>' +
+      '<strong>Test clip #' + example.id + '</strong> &mdash; same leader &amp; music for all methods';
+    slide.appendChild(meta);
+
+    const grid = document.createElement('div');
+    grid.className = 'compare-grid';
+
+    METHODS.forEach(function (method) {
+      const fn = example.videos[method.key];
+      if (!fn) return;
+
+      const cell = document.createElement('div');
+      cell.className = 'compare-cell' + (method.cssClass ? ' ' + method.cssClass : '');
+
+      const title = document.createElement('h4');
+      title.textContent = method.label;
+      cell.appendChild(title);
+
+      const video = document.createElement('video');
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+      video.loop = true;
+      video.muted = true;
+      const src = example.path + '/' + fn;
+      video.src = src;
+      cell.appendChild(video);
+
+      grid.appendChild(cell);
+    });
+
+    slide.appendChild(grid);
+    return slide;
+  }
+
+  function pauseAllVideos() {
+    document.querySelectorAll('#gallery video').forEach(function (v) {
+      v.pause();
+    });
+  }
+
+  function showSlide(index) {
+    currentSlide = index;
+    const slides = document.querySelectorAll('#gallery .slide');
+    const buttons = document.querySelectorAll('#navigation .slide-btn');
+    slides.forEach(function (slide, i) {
+      slide.style.display = i === index ? 'block' : 'none';
+    });
+    buttons.forEach(function (btn, i) {
+      btn.className = i === index ? 'slide-btn active' : 'slide-btn';
+    });
+    pauseAllVideos();
+  }
+
+  function nextSlide() {
+    const slides = document.querySelectorAll('#gallery .slide');
+    if (!slides.length) return;
+    currentSlide = (currentSlide + 1) % slides.length;
+    showSlide(currentSlide);
+  }
+
+  function prevSlide() {
+    const slides = document.querySelectorAll('#gallery .slide');
+    if (!slides.length) return;
+    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+    showSlide(currentSlide);
+  }
+
+  fetch('asset/examples.json')
+    .then(function (response) { return response.json(); })
+    .then(function (data) {
+      examples = data;
+      const gallery = document.getElementById('gallery');
+      const navigation = document.getElementById('navigation');
+
+      examples.forEach(function (example, index) {
+        gallery.appendChild(buildSlide(example));
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'slide-btn';
+        btn.textContent = index + 1;
+        btn.setAttribute('aria-label', 'Example ' + (index + 1) + ': ' + example.level + ' clip ' + example.id);
+        btn.addEventListener('click', function () { showSlide(index); });
+        navigation.appendChild(btn);
+      });
+
+      showSlide(0);
+    })
+    .catch(function (err) {
+      console.error('Failed to load examples:', err);
+    });
+</script>
+
+</body>
+</html>

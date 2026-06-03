@@ -1,0 +1,146 @@
+[
+  {
+    "id": "009",
+    "sample": "Sample_009",
+    "level": "Beginner",
+    "path": "asset/Examples/1-Beginner/Sample_009",
+    "videos": {
+      "ground_truth": "0009_ground_truth.mp4",
+      "salsa_agent": "0009_refinement_salsa_agent.mp4",
+      "duolando": "0009_salsa_duolando.mp4",
+      "intergen": "0009_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "122",
+    "sample": "Sample_122",
+    "level": "Beginner",
+    "path": "asset/Examples/1-Beginner/Sample_122",
+    "videos": {
+      "ground_truth": "0122_ground_truth.mp4",
+      "salsa_agent": "0122_refinement_salsa_agent.mp4",
+      "duolando": "0122_salsa_duolando.mp4",
+      "intergen": "0122_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "130",
+    "sample": "Sample_130",
+    "level": "Beginner",
+    "path": "asset/Examples/1-Beginner/Sample_130",
+    "videos": {
+      "ground_truth": "0130_ground_truth.mp4",
+      "salsa_agent": "0130_refinement_salsa_agent.mp4",
+      "duolando": "0130_salsa_duolando.mp4",
+      "intergen": "0130_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "246",
+    "sample": "Sample_246",
+    "level": "Beginner",
+    "path": "asset/Examples/1-Beginner/Sample_246",
+    "videos": {
+      "ground_truth": "0246_ground_truth.mp4",
+      "salsa_agent": "0246_refinement_salsa_agent.mp4",
+      "duolando": "0246_salsa_duolando.mp4",
+      "intergen": "0246_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "179",
+    "sample": "Sample_179",
+    "level": "Intermediate",
+    "path": "asset/Examples/2-Intermediate/Sample_179",
+    "videos": {
+      "ground_truth": "0179_ground_truth.mp4",
+      "salsa_agent": "0179_refinement_salsa_agent.mp4",
+      "duolando": "0179_salsa_duolando.mp4",
+      "intergen": "0179_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "212",
+    "sample": "Sample_212",
+    "level": "Intermediate",
+    "path": "asset/Examples/2-Intermediate/Sample_212",
+    "videos": {
+      "ground_truth": "0212_ground_truth.mp4",
+      "salsa_agent": "0212_refinement_salsa_agent.mp4",
+      "duolando": "0212_salsa_duolando.mp4",
+      "intergen": "0212_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "346",
+    "sample": "Sample_346",
+    "level": "Intermediate",
+    "path": "asset/Examples/2-Intermediate/Sample_346",
+    "videos": {
+      "ground_truth": "0346_ground_truth.mp4",
+      "salsa_agent": "0346_refinement_salsa_agent.mp4",
+      "duolando": "0346_salsa_duolando.mp4",
+      "intergen": "0346_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "391",
+    "sample": "Sample_391",
+    "level": "Intermediate",
+    "path": "asset/Examples/2-Intermediate/Sample_391",
+    "videos": {
+      "ground_truth": "0391_ground_truth.mp4",
+      "salsa_agent": "0391_refinement_salsa_agent.mp4",
+      "duolando": "0391_salsa_duolando.mp4",
+      "intergen": "0391_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "096",
+    "sample": "Sample_096",
+    "level": "Professional",
+    "path": "asset/Examples/3-Professional/Sample_096",
+    "videos": {
+      "ground_truth": "0096_ground_truth.mp4",
+      "salsa_agent": "0096_refinement_salsa_agent.mp4",
+      "duolando": "0096_salsa_duolando.mp4",
+      "intergen": "0096_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "100",
+    "sample": "Sample_100",
+    "level": "Professional",
+    "path": "asset/Examples/3-Professional/Sample_100",
+    "videos": {
+      "ground_truth": "0100_ground_truth.mp4",
+      "salsa_agent": "0100_refinement_salsa_agent.mp4",
+      "duolando": "0100_salsa_duolando.mp4",
+      "intergen": "0100_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "458",
+    "sample": "Sample_458",
+    "level": "Professional",
+    "path": "asset/Examples/3-Professional/Sample_458",
+    "videos": {
+      "ground_truth": "0458_ground_truth.mp4",
+      "salsa_agent": "0458_refinement_salsa_agent.mp4",
+      "duolando": "0458_salsa_duolando.mp4",
+      "intergen": "0458_salsa_intergen.mp4"
+    }
+  },
+  {
+    "id": "467",
+    "sample": "Sample_467",
+    "level": "Professional",
+    "path": "asset/Examples/3-Professional/Sample_467",
+    "videos": {
+      "ground_truth": "0467_ground_truth.mp4",
+      "salsa_agent": "0467_refinement_salsa_agent.mp4",
+      "duolando": "0467_salsa_duolando.mp4",
+      "intergen": "0467_salsa_intergen.mp4"
+    }
+  }
+]
