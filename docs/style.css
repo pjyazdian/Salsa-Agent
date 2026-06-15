@@ -46,8 +46,9 @@ p {
 
 .example-meta {
 	text-align: center;
-	margin-bottom: 1rem;
+	margin-bottom: 0.35rem;
 	font-size: 1.1em;
+	line-height: 1.35;
 }
 
 .compare-grid {
@@ -69,7 +70,7 @@ p {
 
 .compare-cell h4 {
 	font-size: 15px;
-	margin: 0 0 8px;
+	margin: 0 0 4px;
 	font-weight: 600;
 }
 
@@ -188,6 +189,23 @@ p {
 .framework-img {
 	width: 100%;
 	max-width: 1200px;
+	margin-bottom: 1.75rem;
+}
+
+#examples-section {
+	margin-top: 0;
+}
+
+.examples-intro {
+	margin-bottom: 2.75rem;
+}
+
+#examples-section .slide {
+	padding-top: 0;
+}
+
+#examples-section .compare-grid {
+	margin-top: 0;
 }
 
 .gallery-drive-cta {

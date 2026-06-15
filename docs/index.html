@@ -22,7 +22,7 @@
     <div class="col-xs-0 col-md-2"></div>
     <div class="col-xs-12 col-md-8">
       <h4>
-        Payam <nobr>Jome Yazdian</nobr> &emsp;
+        <a href="https://pjyazdian.github.io/">Payam <nobr>Jome Yazdian</nobr></a> &emsp;
         <nobr>Zoe Stanley</nobr> &emsp;
         <nobr>Angelica Lim</nobr>
       </h4>
@@ -102,16 +102,20 @@
   <h2>Results</h2>
   <hr/>
   <p>
-    On <a href="https://huggingface.co/datasets/Rosie-Lab/compas3d">CoMPAS3D</a>, SalsaAgent achieves the lowest interaction FID among generative methods, stronger leader–follower
-    beat alignment (BED), and substantially better follower kinematic FID than Duolando and InterGen. In a blind human study
-    (31 participants, salsa experience), SalsaAgent was preferred over both baselines across timing, musicality, technique,
-    partner coordination, and originality. For quantitative metrics, ablations, and full human-study analysis, please refer to our
+    SalsaAgent is strongest on partner-consistency and follower-kinematics metrics:
+    it achieves the lowest interaction FID (FID<sub>cd</sub>) among generative methods, improves leader–follower beat alignment (BED),
+    and substantially reduces follower kinematic FID (FID<sub>k</sub>) relative to Duolando and InterGen.
+    In a user study with 31 participants (minimum one year of prior dance experience), four methods were compared side-by-side
+    in anonymized trials across six competitive salsa evaluation dimensions (timing, musicality, technique, difficulty, partner coordination, and originality).
+    Ground truth received the highest ratings; among generative methods, SalsaAgent achieved the best average rank and was significantly preferred over Duolando and InterGen.
+    These evaluations were conducted on the <a href="https://huggingface.co/datasets/Rosie-Lab/compas3d">CoMPAS3D</a> test set.
+    For quantitative metrics, ablations, and full human-study analysis, please refer to our
     <a href="https://arxiv.org/abs/2605.29219">paper</a>.
   </p>
 
   <h2 id="examples">Qualitative Examples</h2>
   <hr/>
-  <p>
+  <p class="examples-intro">
     Each example shows follower generation given the <strong>same leader motion and music</strong> on <a href="https://huggingface.co/datasets/Rosie-Lab/compas3d">CoMPAS3D</a> test clips.
     Clips are grouped by dancer proficiency: <span class="level-badge level-beginner">Beginner</span>,
     <span class="level-badge level-intermediate">Intermediate</span>, or
