@@ -42,16 +42,21 @@ def collate_fn_salsa(batch):
 def train(model, train_loader, args):
     model.train()
 
-    model.llm.set_adapter('t2m')  # activate text-to-motion adapter
-    #Todo Clone 't2m' adapter weights into 't2m-salsa' for continued fine-tuning
-    # model.llm.add_adapter('t2m-salsa', model.lora_config_t2m)
-    # model.llm.adapters['t2m-salsa'].load_state_dict(
-    #     model.llm.adapters['t2m'].state_dict())
+    if getattr(model, 'use_gpt_ablation', False):
+        model.llm.print_trainable_parameters()
+        # Train GPT only (no unused HumanML3D VQ module on this path).
+        optimizer = torch.optim.AdamW(model.llm.parameters(), lr=args.lr)
+    else:
+        model.llm.set_adapter('t2m')  # activate text-to-motion adapter
+        #Todo Clone 't2m' adapter weights into 't2m-salsa' for continued fine-tuning
+        # model.llm.add_adapter('t2m-salsa', model.lora_config_t2m)
+        # model.llm.adapters['t2m-salsa'].load_state_dict(
+        #     model.llm.adapters['t2m'].state_dict())
 
-    # Switch to the new adapter
-    # model.llm.set_adapter('t2m-salsa')
-    model.llm.print_trainable_parameters()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+        # Switch to the new adapter
+        # model.llm.set_adapter('t2m-salsa')
+        model.llm.print_trainable_parameters()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     for epoch in range(args.epochs):
         epoch_loss = 0
@@ -107,7 +112,13 @@ def main():
     args.wandb_project = getattr(args, 'wandb_project', "Salsa-LLM")
     # Stage 1: task 'none' or 'all' = all tasks; use pretrain_all unless --wandb-run-name is set
     _all_tasks = (args.task in (None, 'none', 'all'))
-    args.wandb_run_name = getattr(args, 'wandb_run_name', None) or ("pretrain_all" if _all_tasks else f"{args.task}_v3")
+    from models.motion_gpt_ablation import is_gpt_ablation_backbone
+    _gpt_ablation = is_gpt_ablation_backbone(getattr(args, 'llm_backbone', None))
+    if args.wandb_run_name is None:
+        if _gpt_ablation and not _all_tasks:
+            args.wandb_run_name = f"gpt_ablation_{args.task}"
+        else:
+            args.wandb_run_name = "pretrain_all" if _all_tasks else f"{args.task}_v3"
     args.save_dir = getattr(args, 'save_dir', None) or f'output_trained/{args.wandb_run_name}'
     os.makedirs(args.save_dir, exist_ok=True)
     if args.use_wandb:
@@ -118,10 +129,18 @@ def main():
     args.is_MDM = not getattr(args, 'no_MDM', False)
     # Token set: add MotionScript tokens only when training with MotionScript data (non-MDM); audio from --include-audio
     args.include_motionscript = not args.is_MDM
+    if _gpt_ablation:
+        # Option A: text-free non-LLM control — never add MotionScript tokens
+        args.include_motionscript = False
+        if getattr(args, 'motion_repr_type', 'humanml3d') != 'interhuman':
+            raise ValueError("gpt_ablation requires --motion-repr-type interhuman")
     if args.resume_ckpt and os.path.isfile(args.resume_ckpt):
         ckpt_config = MotionLLM.load_config_from_checkpoint(args.resume_ckpt)
         args.include_audio = ckpt_config.get('include_audio', args.include_audio)
         args.include_motionscript = ckpt_config.get('include_motionscript', args.include_motionscript)
+        if ckpt_config.get('backbone') == 'gpt_ablation':
+            args.llm_backbone = 'gpt_ablation'
+            args.include_motionscript = False
     lmdb_dir = getattr(args, 'lmdb_dir', 'dataset_processed_New/lmdb_Salsa_pair/lmdb_train')
     # n_poses, subdivision_stride, pose_resampling_fps align with demo.py and README cache creation
     n_poses, subdivision_stride, pose_resampling_fps = 100, 50, 20

@@ -18,12 +18,21 @@ def get_args_parser():
     parser.add_argument('--include-audio', action='store_true', help='Add audio tokens (<Audio_0>..) to tokenizer for training with audio modality')
 
     ## LLM 
-    parser.add_argument('--llm-backbone', type=str, default='google/gemma-2-2b-it', help='name of huggingface model backbone')
+    parser.add_argument('--llm-backbone', type=str, default='google/gemma-2-2b-it',
+                        help='HF CausalLM id, or gpt_ablation for non-LLM Option-A control (random-init GPT2)')
     parser.add_argument('--lora-r-t2m', type=int, default=64, help='lora_r for t2m')
     parser.add_argument('--lora-alpha-t2m', type=int, default=64, help='lora_alpha for t2m')
     parser.add_argument('--lora-r-m2t', type=int, default=32, help='lora_r for m2t')
     parser.add_argument('--lora-alpha-m2t', type=int, default=32, help='lora_alpha for m2t')
     parser.add_argument('--lora-dropout', type=float, default=0.1, help='lora_dropout')
+
+    ## Non-LLM GPT ablation (used only when --llm-backbone gpt_ablation; defaults ≈ P_train_S2)
+    parser.add_argument('--gpt-n-layer', type=int, default=12, help='gpt_ablation: number of transformer layers')
+    parser.add_argument('--gpt-n-embd', type=int, default=768, help='gpt_ablation: hidden size')
+    parser.add_argument('--gpt-n-head', type=int, default=12, help='gpt_ablation: attention heads')
+    parser.add_argument('--gpt-n-positions', type=int, default=1024, help='gpt_ablation: max sequence length')
+    parser.add_argument('--gpt-dropout', type=float, default=0.1, help='gpt_ablation: dropout')
+    parser.add_argument('--nb-audio-code', type=int, default=4096, help='gpt_ablation: audio codebook size in compact vocab')
 
     ## dataloader  
     parser.add_argument('--parent-dir', type=str, default='.', help='parent directory for data and checkpoints')

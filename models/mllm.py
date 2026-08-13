@@ -6,6 +6,11 @@ from models.training_utils import *
 import numpy as np
 import models.vqvae as vqvae
 import re
+from models.motion_gpt_ablation import (
+    is_gpt_ablation_backbone,
+    build_motion_gpt_ablation,
+    process_batch_gpt_ablation,
+)
 
 PAIR = True
 
@@ -15,11 +20,34 @@ class MotionLLM(nn.Module):
         super().__init__()
 
         self.args = args
+        self.device = args.device
+        self.use_gpt_ablation = is_gpt_ablation_backbone(getattr(args, 'llm_backbone', None))
+
+        self.motion_repr_type = getattr(args, 'motion_repr_type', 'humanml3d')  # 'humanml3d' | 'interhuman'
+        self.include_audio = getattr(args, 'include_audio', False)  # if True, add <Audio_0>.. tokens
+        self.include_motionscript = getattr(args, 'include_motionscript', False)  # if True, add MotionScript-related tokens
+
+        # -------------------------------------------------------------------------
+        # Non-LLM ablation: compact-vocab GPT (random init). Existing Gemma+LoRA path untouched.
+        # -------------------------------------------------------------------------
+        if self.use_gpt_ablation:
+            if args.is_baseline:
+                raise ValueError("gpt_ablation does not support --is-baseline")
+            if self.motion_repr_type != 'interhuman':
+                raise ValueError("gpt_ablation requires --motion-repr-type interhuman")
+            self.include_motionscript = False  # text-free ablation
+            # No HumanML3D VQ / Gemma load — InterHuman tokens come from the dataset cache.
+            self.net = None
+            self.tokenizer, self.llm, self.nb_text_tokens = build_motion_gpt_ablation(args)
+            self.motion_token_indices = None
+            self.llm.to(self.device)
+            self.llm.eval()
+            return
+
+        self.load_motionvq()  # HumanML3D VQVAE; used for humanml3d path and baseline caption/generate
         self.tokenizer = AutoTokenizer.from_pretrained(self.args.llm_backbone)
         self.llm = AutoModelForCausalLM.from_pretrained(self.args.llm_backbone)
         self.nb_text_tokens = len(self.tokenizer)
-
-        self.device = args.device
 
         self.lora_config_t2m = LoraConfig(
             r=self.args.lora_r_t2m,
@@ -41,11 +69,6 @@ class MotionLLM(nn.Module):
                 task_type="CAUSAL_LM",
                 # trainable_token_indices=[257000] # PEFT version 15 support this but not guaranteed.
             )
-
-        self.load_motionvq()  # HumanML3D VQVAE; used for humanml3d path and baseline caption/generate
-        self.motion_repr_type = getattr(args, 'motion_repr_type', 'humanml3d')  # 'humanml3d' | 'interhuman'
-        self.include_audio = getattr(args, 'include_audio', False)  # if True, add <Audio_0>.. tokens
-        self.include_motionscript = getattr(args, 'include_motionscript', False)  # if True, add MotionScript-related tokens
 
         # -------------------------------------------------------------------------
         # Baseline: HumanML3D-style tokens only (Motion, </Motion>, <Motion_i>)
@@ -148,27 +171,38 @@ class MotionLLM(nn.Module):
     
     def forward(self, level, ms_desc_L, ms_des_F, vq_tokens_L, vq_tokens_F, audio_tokens, batch_interhuman_data=None):
 
-        # inputs_ids, targets, attention_mask = process_batch(tokenizer=self.tokenizer,
-        #                                                     batch_of_captions=caption,
-        #                                                     max_tgt_len=900,
-        #                                                     batch_of_motions=motion_tokens,
-        #                                                     batch_of_motionscript=ms_desc_bins,
-        #                                                     batch_of_audio=audio_tokens)
-        inputs_ids, targets, attention_mask = process_batch_Salsa(
-            tokenizer=self.tokenizer,
-            batch_aux_info=level,
-            batch_ms_desc_L=ms_desc_L,
-            batch_ms_des_F=ms_des_F,
-            batch_vq_tokens_L=vq_tokens_L,
-            batch_vq_tokens_F=vq_tokens_F,
-            batch_audio_tokens=audio_tokens,
-            max_tgt_len=700,
-            current_batch_task=None if (getattr(self.args, 'task', None) in (None, 'none', 'all')) else self.args.task,
-            motion_repr_type=self.motion_repr_type,
-            batch_interhuman_data=batch_interhuman_data,
-            include_audio=getattr(self.args, 'include_audio', False),
-            include_motionscript=getattr(self.args, 'include_motionscript', True),
-        )
+        if self.use_gpt_ablation:
+            inputs_ids, targets, attention_mask = process_batch_gpt_ablation(
+                vocab=self.tokenizer,
+                batch_aux_info=level,
+                batch_audio_tokens=audio_tokens,
+                batch_interhuman_data=batch_interhuman_data,
+                max_tgt_len=700,
+                current_batch_task=None if (getattr(self.args, 'task', None) in (None, 'none', 'all')) else self.args.task,
+                include_audio=getattr(self.args, 'include_audio', False),
+            )
+        else:
+            # inputs_ids, targets, attention_mask = process_batch(tokenizer=self.tokenizer,
+            #                                                     batch_of_captions=caption,
+            #                                                     max_tgt_len=900,
+            #                                                     batch_of_motions=motion_tokens,
+            #                                                     batch_of_motionscript=ms_desc_bins,
+            #                                                     batch_of_audio=audio_tokens)
+            inputs_ids, targets, attention_mask = process_batch_Salsa(
+                tokenizer=self.tokenizer,
+                batch_aux_info=level,
+                batch_ms_desc_L=ms_desc_L,
+                batch_ms_des_F=ms_des_F,
+                batch_vq_tokens_L=vq_tokens_L,
+                batch_vq_tokens_F=vq_tokens_F,
+                batch_audio_tokens=audio_tokens,
+                max_tgt_len=700,
+                current_batch_task=None if (getattr(self.args, 'task', None) in (None, 'none', 'all')) else self.args.task,
+                motion_repr_type=self.motion_repr_type,
+                batch_interhuman_data=batch_interhuman_data,
+                include_audio=getattr(self.args, 'include_audio', False),
+                include_motionscript=getattr(self.args, 'include_motionscript', True),
+            )
 
 
 
@@ -200,6 +234,8 @@ class MotionLLM(nn.Module):
         return loss, gen_acc, chosen_tokens, labels
     
     def generate(self, caption):
+        if self.use_gpt_ablation:
+            raise NotImplementedError("generate(caption) is LLM/text-only; use generate_Payam_interhuman for gpt_ablation")
         self.llm.set_adapter('t2m')
         self.llm.eval()
         prompt = "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n"
@@ -234,6 +270,8 @@ class MotionLLM(nn.Module):
         return motion_tokens
 
     def generate_Payam(self, full_prompt, inputs_ids):
+        if self.use_gpt_ablation:
+            raise NotImplementedError("generate_Payam is LLM/text-prompt path; use generate_Payam_interhuman for gpt_ablation")
         self.llm.set_adapter('t2m')
         self.llm.eval()
         # inputs_ids, targets, attention_mask = process_batch_Salsa(tokenizer=self.tokenizer,
@@ -288,9 +326,11 @@ class MotionLLM(nn.Module):
         # print(motion_tokens)
         return tensor_indices # motion_tokens
 
-    def generate_Payam_interhuman(self, full_prompt, task, max_new_tokens=150, num_beams=2, do_sample=False):
+    def generate_Payam_interhuman(self, full_prompt, task, max_new_tokens=150, num_beams=2, do_sample=False,
+                                  prompt_input_ids=None):
         """Generate InterHuman/Relationship token sequence from prompt (InterHuman representation only).
         full_prompt: prompt text ending with '### Response:\\n' + label + open delimiter + space (e.g. 'Follower motion: <FollowerMotion> ').
+        For gpt_ablation, pass prompt_input_ids (1D/2D LongTensor) instead of text full_prompt.
         task: one of INTERHUMAN_TASKS (e.g. 'leader_rel_to_follower').
         Returns dict with keys leader_tokens, follower_tokens, relationship_tokens; only the predicted output type is filled (list of ints), others None.
         """
@@ -298,9 +338,18 @@ class MotionLLM(nn.Module):
         if self.motion_repr_type != 'interhuman':
             raise ValueError("generate_Payam_interhuman requires motion_repr_type='interhuman'")
         out_type = INTERHUMAN_TASK_OUTPUT_TYPE.get(task, "follower")
-        self.llm.set_adapter('t2m')
+        if not self.use_gpt_ablation:
+            self.llm.set_adapter('t2m')
         self.llm.eval()
-        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(self.device)
+        if self.use_gpt_ablation:
+            if prompt_input_ids is None:
+                raise ValueError("gpt_ablation generate_Payam_interhuman requires prompt_input_ids (text prompts unsupported)")
+            input_ids = prompt_input_ids
+            if input_ids.dim() == 1:
+                input_ids = input_ids.unsqueeze(0)
+            input_ids = input_ids.to(self.device)
+        else:
+            input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(self.device)
         input_len = input_ids.shape[1]
         with torch.no_grad():
             outputs = self.llm.generate(
@@ -310,9 +359,13 @@ class MotionLLM(nn.Module):
                 early_stopping=True,
                 return_dict_in_generate=True,
                 pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
             )
         gen_ids = outputs.sequences[0][input_len:]
-        pred_text = self.tokenizer.decode(gen_ids, skip_special_tokens=False)
+        if self.use_gpt_ablation:
+            pred_text = self.tokenizer.decode(gen_ids.tolist(), skip_special_tokens=False)
+        else:
+            pred_text = self.tokenizer.decode(gen_ids, skip_special_tokens=False)
         ih_matches = re.findall(r'<IH_(\d+)>', pred_text)
         rel_matches = re.findall(r'<Rel_(\d+)>', pred_text)
         ih_tokens = [int(x) for x in ih_matches]
@@ -325,6 +378,8 @@ class MotionLLM(nn.Module):
         return result
 
     def caption(self, motion):
+        if self.use_gpt_ablation:
+            raise NotImplementedError("caption() requires LLM m2t adapter; not available for gpt_ablation")
         self.llm.set_adapter('m2t')
         self.llm.eval()
         motion = self.normalize(motion)
@@ -351,6 +406,19 @@ class MotionLLM(nn.Module):
         return caption
     
     def save_model(self, path):
+        if self.use_gpt_ablation:
+            save_dict = {
+                'backbone': 'gpt_ablation',
+                'model_state_dict': self.llm.state_dict(),
+                'vocab': self.tokenizer.get_config(),
+                'gpt_hyperparams': self.llm.gpt_hyperparams(),
+                'include_audio': self.include_audio,
+                'include_motionscript': False,
+                'motion_repr_type': self.motion_repr_type,
+            }
+            torch.save(save_dict, path)
+            return
+
         # only save the lora weights of the model
         save_dict = {}
         for name, param in self.llm.named_parameters():
@@ -374,14 +442,25 @@ class MotionLLM(nn.Module):
     def load_config_from_checkpoint(path):
         """Load only the token-set config from a checkpoint (for building model before load_model)."""
         save_dict = torch.load(path, map_location='cpu')
-        return {
+        cfg = {
             'include_audio': save_dict.get('include_audio', False),
             'include_motionscript': save_dict.get('include_motionscript', False),
         }
+        if save_dict.get('backbone') == 'gpt_ablation':
+            cfg['backbone'] = 'gpt_ablation'
+            cfg['vocab'] = save_dict.get('vocab')
+            cfg['gpt_hyperparams'] = save_dict.get('gpt_hyperparams')
+        return cfg
 
     def load_model(self, path):
         print(f"Loading model from {path}")
         save_dict = torch.load(path, map_location=self.device)
+        if self.use_gpt_ablation or save_dict.get('backbone') == 'gpt_ablation':
+            if not self.use_gpt_ablation:
+                raise ValueError("Checkpoint is gpt_ablation but model was built with an LLM backbone")
+            state = save_dict.get('model_state_dict', save_dict)
+            self.llm.load_state_dict(state, strict=True)
+            return
         for name, param in self.llm.named_parameters():
             # print(name)
             if name in save_dict:
