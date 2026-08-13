@@ -25,6 +25,7 @@ import gradio as gr
 import numpy as np
 import torch
 import tempfile
+import time
 import pyarrow
 import pickle
 from typing import Optional, Tuple, Dict
@@ -83,6 +84,35 @@ README_MOVE_CLASSES = [
 README_STYLING_CLASSES = ["Lady styling", "Man styling"]
 README_ERROR_CLASSES = ["Misinterpreted signal", "Misstep", "Mixed signals", "Off beat"]
 ALL_LABEL_NAMES = README_MOVE_CLASSES + README_STYLING_CLASSES + README_ERROR_CLASSES  # 37 total
+
+# LLM-Inference / Latency task labels -> training_utils task keys
+LLM_INFERENCE_TASK_MAP = {
+    "Leader + Rel to Follower": "leader_rel_to_follower",
+    "Follower + Rel to Leader": "follower_rel_to_leader",
+    "Caption + Leader + Rel to Follower": "caption_leader_rel_to_follower",
+    "Caption + Follower + Rel to Leader": "caption_follower_rel_to_leader",
+    "Pair to Relationship": "pair_to_relationship",
+    "Caption to Leader": "caption_to_leader",
+    "Caption to Follower": "caption_to_follower",
+    "Leader to Follower": "leader_to_follower",
+    "Follower to Leader": "follower_to_leader",
+    "Motion completion (Leader)": "motion_completion_leader",
+    "Motion completion (Follower)": "motion_completion_follower",
+    "Leader motion to Leader MotionScript": "leader_motion_to_motionscript",
+    "Follower motion to Follower MotionScript": "follower_motion_to_motionscript",
+    "Leader MotionScript to Leader motion": "motionscript_to_leader_motion",
+    "Follower MotionScript to Follower motion": "motionscript_to_follower_motion",
+    "Caption to Leader MotionScript": "caption_to_leader_motionscript",
+    "Caption to Follower MotionScript": "caption_to_follower_motionscript",
+    "Caption to Both MotionScripts": "caption_to_both_motionscripts",
+    "Leader MotionScript + Rel to Follower MotionScript": "leader_motionscript_rel_to_follower_motionscript",
+    "Follower MotionScript + Rel to Leader MotionScript": "follower_motionscript_rel_to_leader_motionscript",
+    "MotionScript completion (Leader)": "motionscript_completion_leader",
+    "MotionScript completion (Follower)": "motionscript_completion_follower",
+    "Caption + Leader MotionScript to Follower MotionScript": "caption_leader_motionscript_to_follower_motionscript",
+    "Caption + Follower MotionScript to Leader MotionScript": "caption_follower_motionscript_to_leader_motionscript",
+}
+LLM_INFERENCE_TASK_CHOICES = list(LLM_INFERENCE_TASK_MAP.keys())
 
 # Map dataloader move_class / error_class keys to README display names
 LABEL_TO_README = {
@@ -426,6 +456,10 @@ class InterHumanVisualizationApp:
         
         # Audio tokenizer (lazy loaded)
         self.wavtokenizer = None
+        
+        # Cached LLM for inference / latency (reload only when checkpoint changes)
+        self._llm_model = None
+        self._llm_ckpt_path = None
         
         # Store last computed statistics for dropdown access
         self.last_computed_stats = None
@@ -3867,6 +3901,293 @@ class InterHumanVisualizationApp:
                 print(f"Error searching samples: {e}")
             return []
 
+    def get_llm_model(self, ckpt_path: str):
+        """Load MotionLLM once per checkpoint. Returns (model, error_msg)."""
+        ckpt_path = os.path.abspath(ckpt_path) if ckpt_path else ""
+        if self._llm_model is not None and self._llm_ckpt_path == ckpt_path:
+            return self._llm_model, None
+        if not ckpt_path or not os.path.isfile(ckpt_path):
+            return None, f"Checkpoint not found: {ckpt_path}"
+        try:
+            from models.mllm import MotionLLM
+            from options.option_llm import get_args_parser
+            args = get_args_parser()
+            args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            args.motion_repr_type = "interhuman"
+            ckpt_config = MotionLLM.load_config_from_checkpoint(ckpt_path)
+            args.include_audio = ckpt_config.get("include_audio", False)
+            args.include_motionscript = ckpt_config.get("include_motionscript", False)
+            model = MotionLLM(args)
+            model.load_model(ckpt_path)
+            model.llm.eval()
+            self._llm_model = model
+            self._llm_ckpt_path = ckpt_path
+            return model, None
+        except Exception as e:
+            import traceback
+            return None, f"Model load error: {e}\n{traceback.format_exc()}"
+
+    def _build_llm_prompt_for_sample(
+        self,
+        idx: int,
+        task_choice: str,
+        include_audio_val: bool,
+        include_motionscript_val: bool,
+        output_motionscript_first_val: bool,
+        model,
+    ):
+        """Build InterHuman prompt/target for one sample. Returns (prompt, gt_target, task_key, error)."""
+        from models.training_utils import build_prompt_interhuman_salsa
+        sample = self._get_sample_from_dataset(idx)
+        interhuman_data = sample.get("interhuman_data")
+        if interhuman_data is None:
+            return None, None, None, "No InterHuman data for this sample."
+        leader_tokens = interhuman_data.get("leader_tokens")
+        follower_tokens = interhuman_data.get("follower_tokens")
+        relationship_tokens = interhuman_data.get("relationship_tokens")
+        if leader_tokens is None or follower_tokens is None or relationship_tokens is None:
+            return None, None, None, "Sample missing leader_tokens, follower_tokens, or relationship_tokens."
+        leader_tokens = np.asarray(leader_tokens).ravel().tolist()
+        follower_tokens = np.asarray(follower_tokens).ravel().tolist()
+        relationship_tokens = np.asarray(relationship_tokens).ravel().tolist()
+        audio_tokens = sample.get("audio_tokens")
+        if audio_tokens is not None:
+            audio_tokens = np.asarray(audio_tokens).ravel().tolist()
+        task_key = LLM_INFERENCE_TASK_MAP.get(task_choice, "leader_rel_to_follower")
+        metadata = self.get_metadata_info(idx)
+        move_annotations = metadata.get("moves", []) if metadata and "error" not in metadata else []
+        level = metadata.get("level") if metadata and "error" not in metadata else None
+        caption = metadata.get("caption") if metadata and "error" not in metadata else None
+        ms_L = sample.get("ms_desc_L")
+        ms_F = sample.get("ms_des_F")
+        if ms_L is not None and not isinstance(ms_L, str):
+            ms_L = " --> ".join(str(x) for x in ms_L) if (isinstance(ms_L, (list, tuple)) and ms_L) else ""
+        if ms_F is not None and not isinstance(ms_F, str):
+            ms_F = " --> ".join(str(x) for x in ms_F) if (isinstance(ms_F, (list, tuple)) and ms_F) else ""
+        ms_L = (ms_L or "").strip() if isinstance(ms_L, str) else ""
+        ms_F = (ms_F or "").strip() if isinstance(ms_F, str) else ""
+        include_ms = bool(include_motionscript_val) and bool(ms_L or ms_F) and bool(getattr(model, "include_motionscript", False))
+        effective_include_audio = bool(include_audio_val) and bool(getattr(model, "include_audio", False))
+        prompt_text, gt_target_text = build_prompt_interhuman_salsa(
+            leader_tokens=leader_tokens,
+            follower_tokens=follower_tokens,
+            relationship_tokens=relationship_tokens,
+            task=task_key,
+            move_annotations=move_annotations,
+            level=level,
+            caption=caption,
+            audio_tokens=audio_tokens,
+            include_audio=effective_include_audio,
+            include_motionscript=include_ms,
+            motionscript_leader=(ms_L or None) if include_ms else None,
+            motionscript_follower=(ms_F or None) if include_ms else None,
+            output_motionscript_first=bool(output_motionscript_first_val),
+        )
+        return prompt_text, gt_target_text, task_key, None
+
+    def _timed_llm_generate(self, model, prompt_text, task_key, max_new_tokens):
+        """CUDA-synced wall time of generate_Payam_interhuman only. Returns (elapsed_s, pred_dict)."""
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        pred_dict = model.generate_Payam_interhuman(prompt_text, task_key, max_new_tokens=int(max_new_tokens))
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        elapsed = time.perf_counter() - t0
+        return elapsed, pred_dict
+
+    def run_llm_latency_benchmark(
+        self,
+        start_idx,
+        task_choice,
+        include_audio_val,
+        include_motionscript_val,
+        output_motionscript_first_val,
+        ckpt_path,
+        n_samples,
+        max_new_tokens,
+        visualize_one,
+        warmup,
+        progress=None,
+    ):
+        """
+        Measure average LLM inference time over N samples.
+        Times only generate_Payam_interhuman (CUDA-synced). Excludes checkpoint load,
+        dataset I/O, prompt construction, token reconstruction, and video rendering.
+        """
+        if progress is None:
+            progress = lambda *a, **k: None
+        if self.dataset is None:
+            return "", None, "Load LMDB first."
+        n_total = len(self.dataset)
+        if n_total <= 0:
+            return "", None, "Dataset is empty."
+        try:
+            start_idx = int(start_idx) if start_idx is not None else 0
+            start_idx = start_idx % n_total
+        except (TypeError, ValueError):
+            start_idx = 0
+        try:
+            n_samples = int(n_samples) if n_samples not in (None, "") else 10
+            n_samples = max(1, min(100, n_samples))
+        except (TypeError, ValueError):
+            n_samples = 10
+        try:
+            max_new_tokens = int(max_new_tokens) if max_new_tokens not in (None, "") else 150
+            max_new_tokens = max(8, min(1024, max_new_tokens))
+        except (TypeError, ValueError):
+            max_new_tokens = 150
+        want_viz = bool(visualize_one)
+        warmup = bool(warmup)
+
+        progress(0, desc="Loading LLM checkpoint (not timed)…")
+        model, err = self.get_llm_model(ckpt_path)
+        if err:
+            return "", None, err
+
+        n_extra = (1 if warmup else 0) + (1 if (want_viz and not warmup) else 0)
+        n_needed = n_samples + n_extra
+
+        progress(0.05, desc="Building prompts (not timed)…")
+        prompts = []
+        used_indices = []
+        skipped = 0
+        scan_i = 0
+        max_scan = n_total * 2
+        while len(prompts) < n_needed and scan_i < max_scan:
+            idx = (start_idx + scan_i) % n_total
+            scan_i += 1
+            prompt_text, _gt, task_key, perr = self._build_llm_prompt_for_sample(
+                idx,
+                task_choice,
+                include_audio_val,
+                include_motionscript_val,
+                output_motionscript_first_val,
+                model,
+            )
+            if perr or not prompt_text:
+                skipped += 1
+                continue
+            prompts.append((idx, prompt_text, task_key))
+            used_indices.append(idx)
+        if len(prompts) < n_needed:
+            return "", None, (
+                f"Could not build enough InterHuman prompts ({len(prompts)}/{n_needed}). "
+                f"Skipped {skipped} samples without InterHuman data."
+            )
+
+        from models.training_utils import INTERHUMAN_TASK_OUTPUT_TYPE
+
+        video_path = None
+        cursor = 0
+        try:
+            if warmup:
+                progress(0.08, desc="Warmup (untimed)…")
+                idx_w, prompt_w, task_w = prompts[cursor]
+                _, pred_w = self._timed_llm_generate(model, prompt_w, task_w, max_new_tokens)
+                if want_viz and pred_w is not None:
+                    progress(0.12, desc="Rendering sanity-check video (not timed)…")
+                    out_type = INTERHUMAN_TASK_OUTPUT_TYPE.get(task_w, "follower")
+                    leader_override = (pred_w.get("leader_tokens") or []) if out_type == "leader" else None
+                    follower_override = (pred_w.get("follower_tokens") or []) if out_type == "follower" else None
+                    rel_override = (pred_w.get("relationship_tokens") or []) if out_type == "relationship" else None
+                    _, _, pred_combined, _, _, _ = self.visualize_reconstruction_from_tokens(
+                        idx_w,
+                        use_continuous_concatenation=True,
+                        use_actual_relation=True,
+                        leader_tokens_override=leader_override,
+                        follower_tokens_override=follower_override,
+                        relationship_tokens_override=rel_override,
+                        output_suffix="_latency",
+                        use_mesh=False,
+                    )
+                    video_path = pred_combined
+                cursor += 1
+            elif want_viz:
+                progress(0.12, desc="Sanity-check sample (excluded from average)…")
+                idx_v, prompt_v, task_v = prompts[cursor]
+                _, pred_v = self._timed_llm_generate(model, prompt_v, task_v, max_new_tokens)
+                out_type = INTERHUMAN_TASK_OUTPUT_TYPE.get(task_v, "follower")
+                leader_override = (pred_v.get("leader_tokens") or []) if out_type == "leader" else None
+                follower_override = (pred_v.get("follower_tokens") or []) if out_type == "follower" else None
+                rel_override = (pred_v.get("relationship_tokens") or []) if out_type == "relationship" else None
+                _, _, pred_combined, _, _, _ = self.visualize_reconstruction_from_tokens(
+                    idx_v,
+                    use_continuous_concatenation=True,
+                    use_actual_relation=True,
+                    leader_tokens_override=leader_override,
+                    follower_tokens_override=follower_override,
+                    relationship_tokens_override=rel_override,
+                    output_suffix="_latency",
+                    use_mesh=False,
+                )
+                video_path = pred_combined
+                cursor += 1
+
+            times = []
+            n_pred_tokens = []
+            timed_indices = used_indices[cursor : cursor + n_samples]
+            for i in range(n_samples):
+                progress((i + 1) / (n_samples + 1), desc=f"Timed inference {i + 1}/{n_samples}")
+                _idx, prompt_text, task_key = prompts[cursor + i]
+                elapsed, pred_dict = self._timed_llm_generate(model, prompt_text, task_key, max_new_tokens)
+                times.append(elapsed)
+                out_type = INTERHUMAN_TASK_OUTPUT_TYPE.get(task_key, "follower")
+                if out_type == "relationship":
+                    toks = pred_dict.get("relationship_tokens") or []
+                else:
+                    toks = pred_dict.get(f"{out_type}_tokens") or []
+                n_pred_tokens.append(len(toks))
+
+            progress(1.0, desc="Done")
+            arr = np.asarray(times, dtype=np.float64)
+            n = int(arr.size)
+            mean_s = float(arr.mean())
+            std_s = float(arr.std(ddof=1)) if n > 1 else 0.0
+            device = "cpu"
+            if torch.cuda.is_available():
+                try:
+                    device = f"cuda ({torch.cuda.get_device_name(0)})"
+                except Exception:
+                    device = "cuda"
+            ckpt_label = ckpt_path
+            try:
+                ckpt_label = os.path.relpath(os.path.abspath(ckpt_path), str(self.parent_dir))
+            except ValueError:
+                pass
+            mean_tok = float(np.mean(n_pred_tokens)) if n_pred_tokens else 0.0
+            lines = [
+                "Latency — LLM inference only (generate_Payam_interhuman)",
+                "Excluded: checkpoint load, dataset I/O, prompt construction, VQ decode, visualization/rendering.",
+                "",
+                f"Checkpoint:     {ckpt_label}",
+                f"Device:         {device}",
+                f"Task:           {task_choice} ({LLM_INFERENCE_TASK_MAP.get(task_choice, 'leader_rel_to_follower')})",
+                f"max_new_tokens: {max_new_tokens}",
+                f"Include audio:  {bool(include_audio_val)}",
+                f"Include MS:     {bool(include_motionscript_val)}",
+                f"MS first:       {bool(output_motionscript_first_val)}",
+                f"Timed samples:  {n} (requested {n_samples})",
+                f"Warmup:         {'yes (1 untimed run)' if warmup else 'no'}",
+                f"Sanity video:   {'yes (excluded from average)' if video_path else 'no'}",
+                f"Sample indices: {', '.join(str(i) for i in timed_indices)}",
+                "",
+                f"Mean:           {mean_s:.4f} s",
+                f"Std:            {std_s:.4f} s",
+                f"Min:            {float(arr.min()):.4f} s",
+                f"Max:            {float(arr.max()):.4f} s",
+                f"Total (timed):  {float(arr.sum()):.4f} s",
+                f"Throughput:     {(n / float(arr.sum())) if float(arr.sum()) > 0 else 0.0:.4f} samples/s",
+                f"Mean pred toks: {mean_tok:.1f}",
+                "",
+                f"Per-sample (s): {', '.join(f'{t:.4f}' for t in times)}",
+                f"Per-sample toks:{', '.join(str(int(t)) for t in n_pred_tokens)}",
+            ]
+            return "\n".join(lines), video_path, ""
+        except Exception as e:
+            import traceback
+            return "", video_path, f"{e}\n{traceback.format_exc()}"
+
 
 def create_interface():
     """Create the Gradio interface with tabs."""
@@ -4305,22 +4626,7 @@ def create_interface():
                 with gr.Row():
                     llm_task = gr.Dropdown(
                         label="Task",
-                        choices=[
-                            "Leader + Rel to Follower", "Follower + Rel to Leader",
-                            "Caption + Leader + Rel to Follower", "Caption + Follower + Rel to Leader",
-                            "Pair to Relationship", "Caption to Leader", "Caption to Follower",
-                            "Leader to Follower", "Follower to Leader",
-                            "Motion completion (Leader)", "Motion completion (Follower)",
-                            "Leader motion to Leader MotionScript", "Follower motion to Follower MotionScript",
-                            "Leader MotionScript to Leader motion", "Follower MotionScript to Follower motion",
-                            "Caption to Leader MotionScript", "Caption to Follower MotionScript",
-                            "Caption to Both MotionScripts",
-                            "Leader MotionScript + Rel to Follower MotionScript",
-                            "Follower MotionScript + Rel to Leader MotionScript",
-                            "MotionScript completion (Leader)", "MotionScript completion (Follower)",
-                            "Caption + Leader MotionScript to Follower MotionScript",
-                            "Caption + Follower MotionScript to Leader MotionScript",
-                        ],
+                        choices=LLM_INFERENCE_TASK_CHOICES,
                         value="Leader + Rel to Follower"
                     )
                     llm_include_audio = gr.Checkbox(label="Include audio", value=False)
@@ -4350,6 +4656,52 @@ def create_interface():
                     llm_pred_mesh_video = gr.Video(label="Predicted mesh (2-person SMPL)", scale=1)
                     llm_gt_mesh_video = gr.Video(label="Ground truth mesh (2-person SMPL)", scale=1)
                 llm_info = gr.Textbox(label="Info", lines=8, interactive=False)
+
+            with gr.Tab("Latency"):
+                gr.Markdown(
+                    "Measure **LLM inference latency** (`generate_Payam_interhuman` only, CUDA-synced). "
+                    "**Not included:** checkpoint load, dataset I/O, prompt construction, VQ-VAE decode, or video rendering. "
+                    "Load LMDB first. Timed runs **cycle through samples** from the current index. "
+                    "Warmup and the optional sanity-check video are extra runs and are **excluded** from the average. "
+                    "`max_new_tokens` defaults to **150** (same as the LLM-Inference tab)."
+                )
+                lat_task = gr.Dropdown(
+                    label="Task",
+                    choices=LLM_INFERENCE_TASK_CHOICES,
+                    value="Leader + Rel to Follower",
+                )
+                with gr.Row():
+                    lat_include_audio = gr.Checkbox(label="Include audio", value=False)
+                    lat_include_motionscript = gr.Checkbox(label="Include MotionScript", value=False)
+                    lat_output_motionscript_first = gr.Checkbox(
+                        label="Output MotionScript first",
+                        value=False,
+                    )
+                lat_ckpt = gr.Textbox(
+                    label="LLM checkpoint path",
+                    value="output_trained/pretrain_all/Xmotionllm_epoch10.pth",
+                )
+                with gr.Row():
+                    lat_n = gr.Number(value=10, label="Number of timed samples", precision=0)
+                    lat_max_tokens = gr.Number(
+                        value=150,
+                        label="max_new_tokens",
+                        precision=0,
+                        info="LLM generation budget (default 150, same as LLM-Inference).",
+                    )
+                with gr.Row():
+                    lat_warmup = gr.Checkbox(
+                        value=True,
+                        label="Warmup (1 extra untimed run; recommended so CUDA kernels are compiled before timing)",
+                    )
+                    lat_viz = gr.Checkbox(
+                        value=False,
+                        label="Visualize one sample for sanity check (excluded from time calculation)",
+                    )
+                lat_btn = gr.Button("Measure latency", variant="primary")
+                lat_report = gr.Textbox(label="Latency report", interactive=False, lines=24)
+                lat_video = gr.Video(label="Sanity-check predicted pair (not timed)")
+                lat_status = gr.Textbox(label="Message", interactive=False)
 
             with gr.Tab("📹 Legacy (HumanML3D)"):
                 gr.Markdown("### Original HumanML3D Visualization")
@@ -4613,33 +4965,7 @@ def create_interface():
                 audio_tokens = sample.get("audio_tokens")
                 if audio_tokens is not None:
                     audio_tokens = np.asarray(audio_tokens).ravel().tolist()
-                task_map = {
-                    "Leader + Rel to Follower": "leader_rel_to_follower",
-                    "Follower + Rel to Leader": "follower_rel_to_leader",
-                    "Caption + Leader + Rel to Follower": "caption_leader_rel_to_follower",
-                    "Caption + Follower + Rel to Leader": "caption_follower_rel_to_leader",
-                    "Pair to Relationship": "pair_to_relationship",
-                    "Caption to Leader": "caption_to_leader",
-                    "Caption to Follower": "caption_to_follower",
-                    "Leader to Follower": "leader_to_follower",
-                    "Follower to Leader": "follower_to_leader",
-                    "Motion completion (Leader)": "motion_completion_leader",
-                    "Motion completion (Follower)": "motion_completion_follower",
-                    "Leader motion to Leader MotionScript": "leader_motion_to_motionscript",
-                    "Follower motion to Follower MotionScript": "follower_motion_to_motionscript",
-                    "Leader MotionScript to Leader motion": "motionscript_to_leader_motion",
-                    "Follower MotionScript to Follower motion": "motionscript_to_follower_motion",
-                    "Caption to Leader MotionScript": "caption_to_leader_motionscript",
-                    "Caption to Follower MotionScript": "caption_to_follower_motionscript",
-                    "Caption to Both MotionScripts": "caption_to_both_motionscripts",
-                    "Leader MotionScript + Rel to Follower MotionScript": "leader_motionscript_rel_to_follower_motionscript",
-                    "Follower MotionScript + Rel to Leader MotionScript": "follower_motionscript_rel_to_leader_motionscript",
-                    "MotionScript completion (Leader)": "motionscript_completion_leader",
-                    "MotionScript completion (Follower)": "motionscript_completion_follower",
-                    "Caption + Leader MotionScript to Follower MotionScript": "caption_leader_motionscript_to_follower_motionscript",
-                    "Caption + Follower MotionScript to Leader MotionScript": "caption_follower_motionscript_to_leader_motionscript",
-                }
-                task_key = task_map.get(task_choice, "leader_rel_to_follower")
+                task_key = LLM_INFERENCE_TASK_MAP.get(task_choice, "leader_rel_to_follower")
                 metadata = app.get_metadata_info(idx)
                 move_annotations = metadata.get("moves", []) if metadata and "error" not in metadata else []
                 level = metadata.get("level") if metadata and "error" not in metadata else None
@@ -4722,6 +5048,43 @@ def create_interface():
             fn=on_llm_inference,
             inputs=[sample_idx, llm_task, llm_include_audio, llm_include_motionscript, llm_output_motionscript_first, use_mesh_llm, llm_ckpt],
             outputs=[llm_prompt_text, llm_gt_target, llm_pred_target, llm_pred_video, llm_gt_video, llm_pred_mesh_video, llm_gt_mesh_video, llm_info]
+        )
+
+        def do_latency(
+            idx_val, task_choice, include_audio_val, include_motionscript_val,
+            output_motionscript_first_val, ckpt_path, n, max_tok, viz, warm,
+            progress=gr.Progress(),
+        ):
+            report, video, err = app.run_llm_latency_benchmark(
+                idx_val,
+                task_choice,
+                include_audio_val,
+                include_motionscript_val,
+                output_motionscript_first_val,
+                ckpt_path,
+                n,
+                max_tok,
+                viz,
+                warm,
+                progress=progress,
+            )
+            return report, video, err or ""
+
+        lat_btn.click(
+            fn=do_latency,
+            inputs=[
+                sample_idx,
+                lat_task,
+                lat_include_audio,
+                lat_include_motionscript,
+                lat_output_motionscript_first,
+                lat_ckpt,
+                lat_n,
+                lat_max_tokens,
+                lat_viz,
+                lat_warmup,
+            ],
+            outputs=[lat_report, lat_video, lat_status],
         )
         
         # Metadata visualization
